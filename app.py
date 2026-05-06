@@ -4,10 +4,30 @@ Built with Claude Code | Dreamshot AI Studio
 """
 
 import uuid
+import base64
+import io
 import threading
 from datetime import datetime
 from flask import Flask, render_template_string, request, jsonify
 from scanner import run_scan
+
+
+def extract_text_from_file(b64: str, filename: str) -> str:
+    """Extract plain text from a base64-encoded PDF or Word file."""
+    try:
+        data = base64.b64decode(b64)
+        name = filename.lower()
+        if name.endswith(".pdf"):
+            import pypdf
+            reader = pypdf.PdfReader(io.BytesIO(data))
+            return " ".join(page.extract_text() or "" for page in reader.pages)
+        elif name.endswith((".docx", ".doc")):
+            from docx import Document
+            doc = Document(io.BytesIO(data))
+            return " ".join(p.text for p in doc.paragraphs)
+    except Exception:
+        pass
+    return ""
 
 app = Flask(__name__)
 
@@ -49,6 +69,21 @@ button:hover{opacity:.85}
 button:disabled{opacity:.4;cursor:not-allowed}
 .hint{font-size:11px;color:#334155;margin-top:20px}
 .built{font-size:11px;color:#1e3a8a;margin-top:8px}
+.upload-zone{border:2px dashed #1e3a8a;border-radius:10px;padding:20px 16px;
+             cursor:pointer;transition:border-color .2s;text-align:center;
+             background:#0a0e1a;position:relative}
+.upload-zone:hover,.upload-zone.over{border-color:#3b82f6;background:#0d1526}
+.upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.upload-icon{font-size:28px;margin-bottom:6px}
+.upload-main{font-size:13px;color:#94a3b8}
+.upload-sub{font-size:11px;color:#475569;margin-top:4px}
+.file-chosen{font-size:12px;color:#4ade80;margin-top:6px;display:none}
+.or-paste{font-size:11px;color:#334155;text-align:center;margin:4px 0;cursor:pointer;
+          text-decoration:underline;text-underline-offset:2px}
+textarea{width:100%;padding:12px 16px;border-radius:10px;border:1px solid #1e3a8a;
+         background:#0f172a;color:#e2e8f0;font-size:13px;outline:none;
+         transition:border .2s;resize:vertical;font-family:inherit;display:none}
+textarea:focus{border-color:#3b82f6}
 </style>
 </head>
 <body>
@@ -66,8 +101,17 @@ button:disabled{opacity:.4;cursor:not-allowed}
       <input id="loc" type="text" value="Israel" placeholder="Israel / Tel Aviv / Remote">
     </div>
     <div>
-      <label>רזומה (הדבק טקסט — אופציונלי, משפר את דיוק הניקוד)</label>
-      <textarea id="resume" rows="5" placeholder="הדבק כאן את תוכן הרזומה שלך בטקסט חופשי..."></textarea>
+      <label>רזומה (אופציונלי — משפר את דיוק הניקוד)</label>
+      <div class="upload-zone" id="dropzone">
+        <input type="file" id="resume_file" accept=".pdf,.doc,.docx"
+               onchange="fileChosen(this)">
+        <div class="upload-icon">📄</div>
+        <div class="upload-main">גרור לכאן או לחץ לבחירת קובץ</div>
+        <div class="upload-sub">PDF · Word (.docx / .doc)</div>
+        <div class="file-chosen" id="file_chosen">✓ <span id="file_name"></span></div>
+      </div>
+      <div class="or-paste" onclick="togglePaste()">או הדבק טקסט ידנית ▾</div>
+      <textarea id="resume_text" rows="4" placeholder="הדבק כאן טקסט חופשי מהרזומה..."></textarea>
     </div>
     <button id="btn" type="submit">הרץ סריקה</button>
   </form>
@@ -75,20 +119,51 @@ button:disabled{opacity:.4;cursor:not-allowed}
   <p class="built">נבנה עם Claude Code · Anthropic</p>
 </div>
 <script>
+function fileChosen(input) {
+  const f = input.files[0];
+  if (!f) return;
+  document.getElementById('file_name').textContent = f.name;
+  document.getElementById('file_chosen').style.display = 'block';
+  document.getElementById('resume_text').style.display = 'none';
+}
+
+function togglePaste() {
+  const ta = document.getElementById('resume_text');
+  ta.style.display = ta.style.display === 'none' ? 'block' : 'none';
+}
+
+// drag-over highlight
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); });
+
 function startScan(e) {
   e.preventDefault();
-  const job    = document.getElementById('job').value.trim();
-  const loc    = document.getElementById('loc').value.trim() || 'Israel';
-  const resume = document.getElementById('resume').value.trim();
+  const job  = document.getElementById('job').value.trim();
+  const loc  = document.getElementById('loc').value.trim() || 'Israel';
+  const text = document.getElementById('resume_text').value.trim();
+  const file = document.getElementById('resume_file').files[0];
   document.getElementById('btn').disabled = true;
   document.getElementById('btn').textContent = '⏳ מתחיל...';
-  fetch('/start', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({job, loc, resume})
-  })
-  .then(r=>r.json())
-  .then(d=>{ window.location.href = '/scan/' + d.scan_id; });
+
+  function send(b64, name) {
+    fetch('/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({job, loc, resume_text: text, resume_b64: b64, resume_name: name})
+    })
+    .then(r => r.json())
+    .then(d => { window.location.href = '/scan/' + d.scan_id; });
+  }
+
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = ev => send(ev.target.result.split(',')[1], file.name);
+    reader.readAsDataURL(file);
+  } else {
+    send('', '');
+  }
 }
 </script>
 </body>
@@ -323,14 +398,22 @@ def index():
 
 @app.route("/start", methods=["POST"])
 def start():
-    data     = request.get_json()
-    job      = data.get("job", "").strip()[:80]
-    loc      = data.get("loc", "Israel").strip()[:50]
-    resume   = data.get("resume", "").strip()[:8000]
-    scan_id  = str(uuid.uuid4())[:8]
+    data        = request.get_json()
+    job         = data.get("job", "").strip()[:80]
+    loc         = data.get("loc", "Israel").strip()[:50]
+    resume_b64  = data.get("resume_b64", "").strip()
+    resume_name = data.get("resume_name", "").strip()
+    resume_text = data.get("resume_text", "").strip()[:8000]
+
+    if resume_b64 and resume_name:
+        extracted = extract_text_from_file(resume_b64, resume_name)
+        if extracted:
+            resume_text = extracted[:8000]
+
+    scan_id = str(uuid.uuid4())[:8]
 
     scans[scan_id] = {
-        "job": job, "loc": loc, "resume": resume,
+        "job": job, "loc": loc, "resume": resume_text,
         "log": [], "done": False,
         "jobs": [], "started": datetime.now(),
         "status_msg": "מאתחל...",
@@ -341,7 +424,7 @@ def start():
             scans[scan_id]["log"].append(msg)
             scans[scan_id]["status_msg"] = msg[:60]
         try:
-            jobs = run_scan(job, loc, log_fn=log_fn, resume_text=resume)
+            jobs = run_scan(job, loc, log_fn=log_fn, resume_text=resume_text)
             scans[scan_id]["jobs"] = jobs
         except Exception as e:
             scans[scan_id]["log"].append(f"שגיאה: {e}")
