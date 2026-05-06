@@ -7,7 +7,6 @@ import re
 import time
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
 
 HEADERS = {
     "User-Agent": (
@@ -18,14 +17,46 @@ HEADERS = {
 }
 
 COMPANY_BONUS = {
-    "microsoft": 6, "google": 6, "amazon": 6, "meta": 5, "apple": 6,
-    "oracle": 8, "sap": 6, "salesforce": 6, "servicenow": 6, "workday": 6,
-    "ibm": 5, "intel": 6, "cisco": 5, "nvidia": 6,
-    "check point": 7, "nice": 5, "amdocs": 6, "monday.com": 6,
-    "wix": 5, "payoneer": 5, "fiverr": 4, "papaya": 5,
-    "deloitte": 5, "kpmg": 4, "pwc": 4, "accenture": 5, "ey": 4,
-    "one1": 6, "priority": 5,
+    "microsoft": 5, "google": 5, "amazon": 5, "meta": 4, "apple": 5,
+    "oracle": 5, "sap": 5, "salesforce": 5, "servicenow": 5, "workday": 5,
+    "ibm": 4, "intel": 5, "cisco": 4, "nvidia": 5,
+    "check point": 5, "nice": 4, "amdocs": 5, "monday.com": 5,
+    "wix": 4, "payoneer": 4, "fiverr": 3, "papaya": 4,
+    "deloitte": 4, "kpmg": 3, "pwc": 3, "accenture": 4, "ey": 3,
+    "one1": 5, "priority": 4,
 }
+
+STOP_WORDS = {
+    "and", "the", "for", "with", "from", "that", "this", "have", "been",
+    "will", "are", "was", "were", "has", "had", "not", "but", "you", "your",
+    "our", "its", "all", "can", "more", "into", "than", "their", "they",
+    "which", "who", "also", "any", "may", "each", "such", "both", "very",
+    "over", "after", "while", "about", "what", "when", "some", "new", "work",
+    "job", "role", "position", "team", "company", "including", "required",
+    "ability", "skills", "experience", "years", "strong", "excellent",
+    "של", "על", "עם", "אל", "את", "הם", "הן", "הוא", "היא", "אנו", "כל",
+    "לא", "אם", "כי", "גם", "עד", "רק", "עוד", "יש", "היה", "זה", "זאת",
+}
+
+
+def extract_resume_keywords(resume_text: str) -> dict:
+    """Extract weighted keywords from pasted resume text."""
+    if not resume_text or len(resume_text.strip()) < 30:
+        return {}
+    words = re.findall(r"[a-zA-Zא-ת]{3,}", resume_text.lower())
+    freq: dict = {}
+    for w in words:
+        if w not in STOP_WORDS:
+            freq[w] = freq.get(w, 0) + 1
+    kw = {}
+    for w, count in freq.items():
+        if count >= 3:
+            kw[w] = min(6 + count, 14)
+        elif count == 2:
+            kw[w] = 6
+        elif len(w) >= 6:
+            kw[w] = 4
+    return kw
 
 
 def build_search_variants(job_title: str) -> list[str]:
@@ -174,7 +205,7 @@ def fetch_company_about(company_url: str) -> str:
     return ""
 
 
-def score_job(job: dict, score_kw: dict) -> int:
+def score_job(job: dict, score_kw: dict, resume_kw: dict | None = None) -> int:
     title = job.get("title", "").lower()
     desc  = job.get("description", "").lower()
     comp  = job.get("company", "").lower()
@@ -184,6 +215,11 @@ def score_job(job: dict, score_kw: dict) -> int:
     for kw, pts in score_kw.items():
         if kw in title: s += pts * 2
         elif kw in desc: s += pts
+
+    if resume_kw:
+        for kw, pts in resume_kw.items():
+            if kw in title: s += pts * 2
+            elif kw in desc: s += pts
 
     for comp_name, pts in COMPANY_BONUS.items():
         if comp_name in comp: s += pts
@@ -195,12 +231,15 @@ def score_job(job: dict, score_kw: dict) -> int:
     return min(s, 100)
 
 
-def run_scan(job_title: str, location: str, log_fn=None) -> list[dict]:
+def run_scan(job_title: str, location: str, log_fn=None, resume_text: str = "") -> list[dict]:
     def log(msg):
         if log_fn: log_fn(msg)
 
-    variants = build_search_variants(job_title)
-    score_kw = build_score_keywords(job_title)
+    variants  = build_search_variants(job_title)
+    score_kw  = build_score_keywords(job_title)
+    resume_kw = extract_resume_keywords(resume_text)
+    if resume_kw:
+        log(f"📄 רזומה נטענה — {len(resume_kw)} מילות מפתח זוהו")
 
     seen, all_ids = set(), []
     for variant in variants:
@@ -226,7 +265,7 @@ def run_scan(job_title: str, location: str, log_fn=None) -> list[dict]:
             seen_comp[cu] = fetch_company_about(cu)
             time.sleep(0.7)
         d["company_about"] = seen_comp.get(cu, "")
-        d["score"] = score_job(d, score_kw)
+        d["score"] = score_job(d, score_kw, resume_kw or None)
         jobs.append(d)
         log(f"  [{i+1}/{len(all_ids)}] {d['title']} @ {d['company']}")
 
