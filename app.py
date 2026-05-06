@@ -68,7 +68,15 @@ button{background:linear-gradient(135deg,#1d4ed8,#1e40af);color:#fff;border:none
 button:hover{opacity:.85}
 button:disabled{opacity:.4;cursor:not-allowed}
 .hint{font-size:11px;color:#334155;margin-top:20px}
-.built{font-size:11px;color:#1e3a8a;margin-top:8px}
+.brand{display:flex;align-items:center;justify-content:center;gap:10px;
+       margin-top:20px;padding-top:16px;border-top:1px solid #1e293b}
+.brand-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#1d4ed8,#7c3aed);
+              display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.brand-text{text-align:right}
+.brand-name{font-size:13px;font-weight:700;color:#e2e8f0}
+.brand-sub{font-size:11px;color:#475569;margin-top:1px}
+.brand-link{font-size:11px;color:#818cf8;text-decoration:none}
+.brand-link:hover{text-decoration:underline}
 .upload-zone{border:2px dashed #1e3a8a;border-radius:10px;padding:20px 16px;
              cursor:pointer;transition:border-color .2s;text-align:center;
              background:#0a0e1a;position:relative}
@@ -116,7 +124,14 @@ textarea:focus{border-color:#3b82f6}
     <button id="btn" type="submit">הרץ סריקה</button>
   </form>
   <p class="hint">הסריקה לוקחת כ-5-8 דקות. נשאר בדף.</p>
-  <p class="built">נבנה עם Claude Code · Anthropic</p>
+  <div class="brand">
+    <div class="brand-avatar">🎬</div>
+    <div class="brand-text">
+      <div class="brand-name">נבנה על ידי Moshe Schwartz</div>
+      <div class="brand-sub">Dreamshot AI Studio &nbsp;·&nbsp; נבנה עם Claude Code</div>
+      <a class="brand-link" href="https://www.instagram.com/dreamshot.ai.studio/" target="_blank">@dreamshot.ai.studio ↗</a>
+    </div>
+  </div>
 </div>
 <script>
 function fileChosen(input) {
@@ -311,7 +326,11 @@ td{{padding:11px 14px;font-size:12px;vertical-align:top}}
   </tr></thead>
   <tbody>{rows}</tbody>
 </table>
-<div class="footer">Dreamshot AI Studio &nbsp;|&nbsp; נבנה עם Claude Code · Anthropic</div>
+<div class="footer">
+  נבנה על ידי <a href="https://www.instagram.com/dreamshot.ai.studio/" target="_blank"
+  style="color:#818cf8;text-decoration:none">Moshe Schwartz · Dreamshot AI Studio</a>
+  &nbsp;|&nbsp; נבנה עם Claude Code · Anthropic
+</div>
 <script>
 function toggle(id){{
   const r=document.getElementById(id);
