@@ -6,7 +6,7 @@ Built with Claude Code | Dreamshot AI Studio
 import uuid
 import threading
 from datetime import datetime
-from flask import Flask, render_template_string, request, jsonify, Response
+from flask import Flask, render_template_string, request, jsonify
 from scanner import run_scan
 
 app = Flask(__name__)
@@ -39,7 +39,8 @@ label{font-size:12px;color:#94a3b8;font-weight:600;margin-bottom:4px;
 input,select{width:100%;padding:12px 16px;border-radius:10px;border:1px solid #1e3a8a;
              background:#0f172a;color:#e2e8f0;font-size:14px;outline:none;
              transition:border .2s}
-input:focus,select:focus{border-color:#3b82f6}
+input:focus,select:focus,textarea:focus{border-color:#3b82f6}
+textarea{resize:vertical;font-family:inherit;font-size:13px}
 ::placeholder{color:#334155}
 button{background:linear-gradient(135deg,#1d4ed8,#1e40af);color:#fff;border:none;
        padding:14px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;
@@ -64,6 +65,10 @@ button:disabled{opacity:.4;cursor:not-allowed}
       <label>מיקום</label>
       <input id="loc" type="text" value="Israel" placeholder="Israel / Tel Aviv / Remote">
     </div>
+    <div>
+      <label>רזומה (הדבק טקסט — אופציונלי, משפר את דיוק הניקוד)</label>
+      <textarea id="resume" rows="5" placeholder="הדבק כאן את תוכן הרזומה שלך בטקסט חופשי..."></textarea>
+    </div>
     <button id="btn" type="submit">הרץ סריקה</button>
   </form>
   <p class="hint">הסריקה לוקחת כ-5-8 דקות. נשאר בדף.</p>
@@ -72,14 +77,15 @@ button:disabled{opacity:.4;cursor:not-allowed}
 <script>
 function startScan(e) {
   e.preventDefault();
-  const job = document.getElementById('job').value.trim();
-  const loc = document.getElementById('loc').value.trim() || 'Israel';
+  const job    = document.getElementById('job').value.trim();
+  const loc    = document.getElementById('loc').value.trim() || 'Israel';
+  const resume = document.getElementById('resume').value.trim();
   document.getElementById('btn').disabled = true;
   document.getElementById('btn').textContent = '⏳ מתחיל...';
   fetch('/start', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({job, loc})
+    body: JSON.stringify({job, loc, resume})
   })
   .then(r=>r.json())
   .then(d=>{ window.location.href = '/scan/' + d.scan_id; });
@@ -89,7 +95,7 @@ function startScan(e) {
 </html>"""
 
 
-def build_report_html(jobs: list, job_title: str, location: str, elapsed: str) -> str:
+def build_report_html(jobs: list, job_title: str, location: str, elapsed: str, has_resume: bool = False) -> str:
     now        = datetime.now().strftime("%d/%m/%Y %H:%M")
     high_match = [j for j in jobs if j["score"] >= 70]
 
@@ -212,7 +218,7 @@ td{{padding:11px 14px;font-size:12px;vertical-align:top}}
 <div class="header">
   <div>
     <h1>🔍 {job_title} — {location}</h1>
-    <p>{now} &nbsp;|&nbsp; זמן סריקה: {elapsed} &nbsp;|&nbsp; נבנה עם Claude Code</p>
+    <p>{now} &nbsp;|&nbsp; זמן סריקה: {elapsed} &nbsp;|&nbsp; {'<span style="color:#4ade80">📄 ניקוד מותאם לרזומה</span>' if has_resume else 'ניקוד גנרי'} &nbsp;|&nbsp; נבנה עם Claude Code</p>
   </div>
   <a href="/" class="back">← סריקה חדשה</a>
 </div>
@@ -320,10 +326,11 @@ def start():
     data     = request.get_json()
     job      = data.get("job", "").strip()[:80]
     loc      = data.get("loc", "Israel").strip()[:50]
+    resume   = data.get("resume", "").strip()[:8000]
     scan_id  = str(uuid.uuid4())[:8]
 
     scans[scan_id] = {
-        "job": job, "loc": loc,
+        "job": job, "loc": loc, "resume": resume,
         "log": [], "done": False,
         "jobs": [], "started": datetime.now(),
         "status_msg": "מאתחל...",
@@ -334,7 +341,7 @@ def start():
             scans[scan_id]["log"].append(msg)
             scans[scan_id]["status_msg"] = msg[:60]
         try:
-            jobs = run_scan(job, loc, log_fn=log_fn)
+            jobs = run_scan(job, loc, log_fn=log_fn, resume_text=resume)
             scans[scan_id]["jobs"] = jobs
         except Exception as e:
             scans[scan_id]["log"].append(f"שגיאה: {e}")
@@ -373,7 +380,8 @@ def report(scan_id):
     if not s or not s["done"]:
         return "הסריקה עדיין רצה...", 202
     elapsed = str(datetime.now() - s["started"]).split(".")[0]
-    return build_report_html(s["jobs"], s["job"], s["loc"], elapsed)
+    return build_report_html(s["jobs"], s["job"], s["loc"], elapsed,
+                             has_resume=bool(s.get("resume", "").strip()))
 
 
 if __name__ == "__main__":
